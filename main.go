@@ -20,9 +20,9 @@ import (
 	"sync"
 	"time"
 
-	"github.com/artyom/autoflags"
 	"golang.org/x/crypto/acme/autocert"
 	"golang.org/x/sync/errgroup"
+	"mleku.online/git/autoflags"
 )
 
 func main() {
@@ -59,7 +59,8 @@ func run(ctx context.Context, args runArgs) error {
 	if args.Cache == "" {
 		return fmt.Errorf("no cache specified")
 	}
-	srv, httpHandler, err := setupServer(args.Addr, args.Conf, args.Cache, args.Email, args.HSTS)
+	srv, httpHandler, err := setupServer(args.Addr, args.Conf, args.Cache,
+		args.Email, args.HSTS)
 	if err != nil {
 		return err
 	}
@@ -81,7 +82,8 @@ func run(ctx context.Context, args runArgs) error {
 		group.Go(func() error { return httpServer.ListenAndServe() })
 		group.Go(func() error {
 			<-ctx.Done()
-			ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+			ctx, cancel := context.WithTimeout(context.Background(),
+				time.Second)
 			defer cancel()
 			return httpServer.Shutdown(ctx)
 		})
@@ -109,7 +111,8 @@ func run(ctx context.Context, args runArgs) error {
 	return group.Wait()
 }
 
-func setupServer(addr, mapfile, cacheDir, email string, hsts bool) (*http.Server, http.Handler, error) {
+func setupServer(addr, mapfile, cacheDir, email string,
+	hsts bool) (*http.Server, http.Handler, error) {
 	mapping, err := readMapping(mapfile)
 	if err != nil {
 		return nil, nil, err
@@ -122,7 +125,8 @@ func setupServer(addr, mapfile, cacheDir, email string, hsts bool) (*http.Server
 		proxy = &hstsProxy{proxy}
 	}
 	if err := os.MkdirAll(cacheDir, 0700); err != nil {
-		return nil, nil, fmt.Errorf("cannot create cache directory %q: %v", cacheDir, err)
+		return nil, nil, fmt.Errorf("cannot create cache directory %q: %v",
+			cacheDir, err)
 	}
 	m := autocert.Manager{
 		Prompt:     autocert.AcceptTOS,
@@ -225,7 +229,8 @@ type hstsProxy struct {
 }
 
 func (p *hstsProxy) ServeHTTP(w http.ResponseWriter, r *http.Request) {
-	w.Header().Set("Strict-Transport-Security", "max-age=31536000; includeSubDomains; preload")
+	w.Header().Set("Strict-Transport-Security",
+		"max-age=31536000; includeSubDomains; preload")
 	p.Handler.ServeHTTP(w, r)
 }
 
