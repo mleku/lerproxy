@@ -1,5 +1,5 @@
-// Command leproxy implements https reverse proxy with automatic Letsencrypt usage for multiple
-// hostnames/backends
+// Command leproxy implements https reverse proxy with automatic LetsEncrypt
+// usage for multiple hostnames/backends, and URL rewriting capability.
 package main
 
 import (
@@ -7,7 +7,10 @@ import (
 	"context"
 	"fmt"
 	"io"
-	"log"
+	stdLog "log"
+	"mleku.online/git/lerproxy/buf"
+	"mleku.online/git/lerproxy/tcpkeepalive"
+	"mleku.online/git/lerproxy/util"
 	"net"
 	"net/http"
 	"net/http/httputil"
@@ -17,64 +20,72 @@ import (
 	"path/filepath"
 	"runtime"
 	"strings"
-	"sync"
 	"time"
 
 	"golang.org/x/crypto/acme/autocert"
 	"golang.org/x/sync/errgroup"
 	"mleku.online/git/autoflags"
+	"mleku.online/git/lerproxy/hsts"
+	log2 "mleku.online/git/log"
+)
+
+type runArgs struct {
+	addr  string        `flag:"addr,address to listen at"`
+	conf  string        `flag:"map,file with host/backend mapping"`
+	cache string        `flag:"cacheDir,path to directory to cache key and certificates"`
+	hsts  bool          `flag:"hsts,add Strict-Transport-Security header"`
+	email string        `flag:"email,contact email address presented to letsencrypt CA"`
+	http  string        `flag:"http,optional address to serve http-to-https redirects and ACME http-01 challenge responses"`
+	rto   time.Duration `flag:"rto,maximum duration before timing out read of the request"`
+	wto   time.Duration `flag:"wto,maximum duration before timing out write of the response"`
+	idle  time.Duration `flag:"idle,how long idle connection is kept before closing (set rto, wto to 0 to use this)"`
+}
+
+var (
+	log   = log2.GetLogger()
+	fails = log.E.Chk
 )
 
 func main() {
 	args := runArgs{
-		Addr:  ":https",
-		HTTP:  ":http",
-		Conf:  "mapping.txt",
-		Cache: "/var/cache/letsencrypt",
-		RTo:   time.Minute,
-		WTo:   5 * time.Minute,
+		addr:  ":https",
+		http:  ":http",
+		conf:  "mapping.txt",
+		cache: "/var/cache/letsencrypt",
+		rto:   time.Minute,
+		wto:   5 * time.Minute,
 	}
 	autoflags.Parse(&args)
 	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt)
 	defer cancel()
 	if err := run(ctx, args); err != nil {
-		log.Fatal(err)
+		log.F.Ln(err)
 	}
 }
 
-type runArgs struct {
-	Addr  string `flag:"addr,address to listen at"`
-	Conf  string `flag:"map,file with host/backend mapping"`
-	Cache string `flag:"cacheDir,path to directory to cache key and certificates"`
-	HSTS  bool   `flag:"hsts,add Strict-Transport-Security header"`
-	Email string `flag:"email,contact email address presented to letsencrypt CA"`
-	HTTP  string `flag:"http,optional address to serve http-to-https redirects and ACME http-01 challenge responses"`
+func run(ctx context.Context, args runArgs) (err error) {
 
-	RTo  time.Duration `flag:"rto,maximum duration before timing out read of the request"`
-	WTo  time.Duration `flag:"wto,maximum duration before timing out write of the response"`
-	Idle time.Duration `flag:"idle,how long idle connection is kept before closing (set rto, wto to 0 to use this)"`
-}
-
-func run(ctx context.Context, args runArgs) error {
-	if args.Cache == "" {
+	if args.cache == "" {
 		return fmt.Errorf("no cache specified")
 	}
-	srv, httpHandler, err := setupServer(args.Addr, args.Conf, args.Cache,
-		args.Email, args.HSTS)
+
+	var srv *http.Server
+	var httpHandler http.Handler
+	srv, httpHandler, err = setupServer(args)
 	if err != nil {
 		return err
 	}
 	srv.ReadHeaderTimeout = 5 * time.Second
-	if args.RTo > 0 {
-		srv.ReadTimeout = args.RTo
+	if args.rto > 0 {
+		srv.ReadTimeout = args.rto
 	}
-	if args.WTo > 0 {
-		srv.WriteTimeout = args.WTo
+	if args.wto > 0 {
+		srv.WriteTimeout = args.wto
 	}
 	group, ctx := errgroup.WithContext(ctx)
-	if args.HTTP != "" {
+	if args.http != "" {
 		httpServer := http.Server{
-			Addr:         args.HTTP,
+			Addr:         args.http,
 			Handler:      httpHandler,
 			ReadTimeout:  10 * time.Second,
 			WriteTimeout: 10 * time.Second,
@@ -88,7 +99,7 @@ func run(ctx context.Context, args runArgs) error {
 			return httpServer.Shutdown(ctx)
 		})
 	}
-	if srv.ReadTimeout != 0 || srv.WriteTimeout != 0 || args.Idle == 0 {
+	if srv.ReadTimeout != 0 || srv.WriteTimeout != 0 || args.idle == 0 {
 		group.Go(func() error { return srv.ListenAndServeTLS("", "") })
 	} else {
 		group.Go(func() error {
@@ -97,8 +108,10 @@ func run(ctx context.Context, args runArgs) error {
 				return err
 			}
 			defer ln.Close()
-			ln = tcpKeepAliveListener{d: args.Idle,
-				TCPListener: ln.(*net.TCPListener)}
+			ln = tcpkeepalive.Listener{
+				Duration:    args.idle,
+				TCPListener: ln.(*net.TCPListener),
+			}
 			return srv.ServeTLS(ln, "", "")
 		})
 	}
@@ -111,9 +124,8 @@ func run(ctx context.Context, args runArgs) error {
 	return group.Wait()
 }
 
-func setupServer(addr, mapfile, cacheDir, email string,
-	hsts bool) (*http.Server, http.Handler, error) {
-	mapping, err := readMapping(mapfile)
+func setupServer(a runArgs) (s *http.Server, h http.Handler, e error) {
+	mapping, err := readMapping(a.conf)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -121,22 +133,22 @@ func setupServer(addr, mapfile, cacheDir, email string,
 	if err != nil {
 		return nil, nil, err
 	}
-	if hsts {
-		proxy = &hstsProxy{proxy}
+	if a.hsts {
+		proxy = &hsts.Proxy{Handler: proxy}
 	}
-	if err := os.MkdirAll(cacheDir, 0700); err != nil {
+	if err := os.MkdirAll(a.cache, 0700); err != nil {
 		return nil, nil, fmt.Errorf("cannot create cache directory %q: %v",
-			cacheDir, err)
+			a.cache, err)
 	}
 	m := autocert.Manager{
 		Prompt:     autocert.AcceptTOS,
-		Cache:      autocert.DirCache(cacheDir),
-		HostPolicy: autocert.HostWhitelist(keys(mapping)...),
-		Email:      email,
+		Cache:      autocert.DirCache(a.cache),
+		HostPolicy: autocert.HostWhitelist(util.GetKeys(mapping)...),
+		Email:      a.email,
 	}
 	srv := &http.Server{
 		Handler:   proxy,
-		Addr:      addr,
+		Addr:      a.addr,
 		TLSConfig: m.TLSConfig(),
 	}
 	return srv, m.HTTPHandler(nil), nil
@@ -154,15 +166,14 @@ func setProxy(mapping map[string]string) (http.Handler, error) {
 		}
 		network := "tcp"
 		if backendAddr != "" && backendAddr[0] == '@' && runtime.GOOS == "linux" {
-			// append \0 to address so addrlen for connect(2) is
-			// calculated in a way compatible with some other
-			// implementations (i.e. uwsgi)
+			// append \0 to address so addrlen for connect(2) is calculated in a
+			// way compatible with some other implementations (i.e. uwsgi)
 			network, backendAddr = "unix", backendAddr+string(byte(0))
 		} else if filepath.IsAbs(backendAddr) {
 			network = "unix"
 			if strings.HasSuffix(backendAddr, string(os.PathSeparator)) {
-				// path specified as directory with explicit trailing
-				// slash; add this path as static site
+				// path specified as directory with explicit trailing slash; add
+				// this path as static site
 				mux.Handle(hostname+"/", http.FileServer(http.Dir(backendAddr)))
 				continue
 			}
@@ -170,8 +181,8 @@ func setProxy(mapping map[string]string) (http.Handler, error) {
 			switch u.Scheme {
 			case "http", "https":
 				rp := newSingleHostReverseProxy(u)
-				rp.ErrorLog = log.New(io.Discard, "", 0)
-				rp.BufferPool = bufPool{}
+				rp.ErrorLog = stdLog.New(io.Discard, "", 0)
+				rp.BufferPool = buf.Pool{}
 				mux.Handle(hostname+"/", rp)
 				continue
 			}
@@ -187,8 +198,8 @@ func setProxy(mapping map[string]string) (http.Handler, error) {
 					return net.DialTimeout(network, backendAddr, 5*time.Second)
 				},
 			},
-			ErrorLog:   log.New(io.Discard, "", 0),
-			BufferPool: bufPool{},
+			ErrorLog:   stdLog.New(io.Discard, "", 0),
+			BufferPool: buf.Pool{},
 		}
 		mux.Handle(hostname+"/", rp)
 	}
@@ -216,36 +227,6 @@ func readMapping(file string) (map[string]string, error) {
 	return m, sc.Err()
 }
 
-func keys(m map[string]string) []string {
-	out := make([]string, 0, len(m))
-	for k := range m {
-		out = append(out, k)
-	}
-	return out
-}
-
-type hstsProxy struct {
-	http.Handler
-}
-
-func (p *hstsProxy) ServeHTTP(w http.ResponseWriter, r *http.Request) {
-	w.Header().Set("Strict-Transport-Security",
-		"max-age=31536000; includeSubDomains; preload")
-	p.Handler.ServeHTTP(w, r)
-}
-
-type bufPool struct{}
-
-func (bp bufPool) Get() []byte  { return *(bufferPool.Get().(*[]byte)) }
-func (bp bufPool) Put(b []byte) { bufferPool.Put(&b) }
-
-var bufferPool = &sync.Pool{
-	New: func() interface{} {
-		buf := make([]byte, 32*1024)
-		return &buf
-	},
-}
-
 // newSingleHostReverseProxy is a copy of httputil.NewSingleHostReverseProxy
 // with addition of "X-Forwarded-Proto" header.
 func newSingleHostReverseProxy(target *url.URL) *httputil.ReverseProxy {
@@ -253,7 +234,7 @@ func newSingleHostReverseProxy(target *url.URL) *httputil.ReverseProxy {
 	director := func(req *http.Request) {
 		req.URL.Scheme = target.Scheme
 		req.URL.Host = target.Host
-		req.URL.Path = singleJoiningSlash(target.Path, req.URL.Path)
+		req.URL.Path = util.SingleJoiningSlash(target.Path, req.URL.Path)
 		if targetQuery == "" || req.URL.RawQuery == "" {
 			req.URL.RawQuery = targetQuery + req.URL.RawQuery
 		} else {
@@ -265,60 +246,4 @@ func newSingleHostReverseProxy(target *url.URL) *httputil.ReverseProxy {
 		req.Header.Set("X-Forwarded-Proto", "https")
 	}
 	return &httputil.ReverseProxy{Director: director}
-}
-
-func singleJoiningSlash(a, b string) string {
-	aslash := strings.HasSuffix(a, "/")
-	bslash := strings.HasPrefix(b, "/")
-	switch {
-	case aslash && bslash:
-		return a + b[1:]
-	case !aslash && !bslash:
-		return a + "/" + b
-	}
-	return a + b
-}
-
-// tcpKeepAliveListener sets TCP keep-alive timeouts on accepted
-// connections. It's used by ListenAndServe and ListenAndServeTLS so
-// dead TCP connections (e.g. closing laptop mid-download) eventually
-// go away.
-type tcpKeepAliveListener struct {
-	d time.Duration
-	*net.TCPListener
-}
-
-func (ln tcpKeepAliveListener) Accept() (net.Conn, error) {
-	tc, err := ln.AcceptTCP()
-	if err != nil {
-		return nil, err
-	}
-	tc.SetKeepAlive(true)
-	tc.SetKeepAlivePeriod(3 * time.Minute)
-	if ln.d == 0 {
-		return tc, nil
-	}
-	return timeoutConn{d: ln.d, TCPConn: tc}, nil
-}
-
-// timeoutConn extends deadline after successful read or write operations
-type timeoutConn struct {
-	d time.Duration
-	*net.TCPConn
-}
-
-func (c timeoutConn) Read(b []byte) (int, error) {
-	n, err := c.TCPConn.Read(b)
-	if err == nil {
-		_ = c.TCPConn.SetDeadline(time.Now().Add(c.d))
-	}
-	return n, err
-}
-
-func (c timeoutConn) Write(b []byte) (int, error) {
-	n, err := c.TCPConn.Write(b)
-	if err == nil {
-		_ = c.TCPConn.SetDeadline(time.Now().Add(c.d))
-	}
-	return n, err
 }
