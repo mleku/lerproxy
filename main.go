@@ -48,6 +48,7 @@ var (
 )
 
 func main() {
+	log2.SetLogLevel(log2.Trace)
 	args := runArgs{
 		Addr:  ":https",
 		HTTP:  ":http",
