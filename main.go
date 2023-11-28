@@ -1,4 +1,4 @@
-// Command leproxy implements https reverse proxy with automatic LetsEncrypt
+// Command lerproxy implements https reverse proxy with automatic LetsEncrypt
 // usage for multiple hostnames/backends, and URL rewriting capability.
 package main
 
@@ -9,6 +9,7 @@ import (
 	"io"
 	stdLog "log"
 	"mleku.online/git/lerproxy/buf"
+	"mleku.online/git/lerproxy/reverse"
 	"mleku.online/git/lerproxy/tcpkeepalive"
 	"mleku.online/git/lerproxy/util"
 	"net"
@@ -22,7 +23,7 @@ import (
 	"strings"
 	"time"
 
-	"golang.org/x/crypto/acme/autocert"
+	ac "golang.org/x/crypto/acme/autocert"
 	"golang.org/x/sync/errgroup"
 	"mleku.online/git/autoflags"
 	"mleku.online/git/lerproxy/hsts"
@@ -63,17 +64,18 @@ func main() {
 	}
 }
 
-func run(ctx context.Context, args runArgs) (err error) {
+func run(ctx context.Context, args runArgs) (e error) {
 
 	if args.Cache == "" {
-		return fmt.Errorf("no cache specified")
+		e = fmt.Errorf("no cache specified")
+		log.E.Ln(e)
+		return
 	}
 
 	var srv *http.Server
 	var httpHandler http.Handler
-	srv, httpHandler, err = setupServer(args)
-	if err != nil {
-		return err
+	if srv, httpHandler, e = setupServer(args); fails(e) {
+		return
 	}
 	srv.ReadHeaderTimeout = 5 * time.Second
 	if args.RTO > 0 {
@@ -90,7 +92,9 @@ func run(ctx context.Context, args runArgs) (err error) {
 			ReadTimeout:  10 * time.Second,
 			WriteTimeout: 10 * time.Second,
 		}
-		group.Go(func() error { return httpServer.ListenAndServe() })
+		group.Go(func() error {
+			return httpServer.ListenAndServe()
+		})
 		group.Go(func() error {
 			<-ctx.Done()
 			ctx, cancel := context.WithTimeout(context.Background(),
@@ -100,7 +104,9 @@ func run(ctx context.Context, args runArgs) (err error) {
 		})
 	}
 	if srv.ReadTimeout != 0 || srv.WriteTimeout != 0 || args.Idle == 0 {
-		group.Go(func() error { return srv.ListenAndServeTLS("", "") })
+		group.Go(func() error {
+			return srv.ListenAndServeTLS("", "")
+		})
 	} else {
 		group.Go(func() error {
 			ln, err := net.Listen("tcp", srv.Addr)
@@ -125,36 +131,38 @@ func run(ctx context.Context, args runArgs) (err error) {
 }
 
 func setupServer(a runArgs) (s *http.Server, h http.Handler, e error) {
-	mapping, err := readMapping(a.Conf)
-	if err != nil {
-		return nil, nil, err
+	var mapping map[string]string
+	if mapping, e = readMapping(a.Conf); e != nil {
+		return
 	}
-	proxy, err := setProxy(mapping)
-	if err != nil {
-		return nil, nil, err
+	var proxy http.Handler
+	if proxy, e = setProxy(mapping); fails(e) {
+		return
 	}
 	if a.HSTS {
 		proxy = &hsts.Proxy{Handler: proxy}
 	}
-	if err := os.MkdirAll(a.Cache, 0700); err != nil {
-		return nil, nil, fmt.Errorf("cannot create cache directory %q: %v",
-			a.Cache, err)
+	if e = os.MkdirAll(a.Cache, 0700); fails(e) {
+		e = fmt.Errorf("cannot create cache directory %q: %v",
+			a.Cache, e)
+		return
 	}
-	m := autocert.Manager{
-		Prompt:     autocert.AcceptTOS,
-		Cache:      autocert.DirCache(a.Cache),
-		HostPolicy: autocert.HostWhitelist(util.GetKeys(mapping)...),
+	m := ac.Manager{
+		Prompt:     ac.AcceptTOS,
+		Cache:      ac.DirCache(a.Cache),
+		HostPolicy: ac.HostWhitelist(util.GetKeys(mapping)...),
 		Email:      a.Email,
 	}
-	srv := &http.Server{
+	s = &http.Server{
 		Handler:   proxy,
 		Addr:      a.Addr,
 		TLSConfig: m.TLSConfig(),
 	}
-	return srv, m.HTTPHandler(nil), nil
+	h = m.HTTPHandler(nil)
+	return
 }
 
-func setProxy(mapping map[string]string) (http.Handler, error) {
+func setProxy(mapping map[string]string) (h http.Handler, e error) {
 	if len(mapping) == 0 {
 		return nil, fmt.Errorf("empty mapping")
 	}
@@ -180,7 +188,7 @@ func setProxy(mapping map[string]string) (http.Handler, error) {
 		} else if u, err := url.Parse(backendAddr); err == nil {
 			switch u.Scheme {
 			case "http", "https":
-				rp := newSingleHostReverseProxy(u)
+				rp := reverse.NewSingleHostReverseProxy(u)
 				rp.ErrorLog = stdLog.New(io.Discard, "", 0)
 				rp.BufferPool = buf.Pool{}
 				mux.Handle(hostname+"/", rp)
@@ -225,25 +233,4 @@ func readMapping(file string) (map[string]string, error) {
 		m[strings.TrimSpace(s[0])] = strings.TrimSpace(s[1])
 	}
 	return m, sc.Err()
-}
-
-// newSingleHostReverseProxy is a copy of httputil.NewSingleHostReverseProxy
-// with addition of "X-Forwarded-Proto" header.
-func newSingleHostReverseProxy(target *url.URL) *httputil.ReverseProxy {
-	targetQuery := target.RawQuery
-	director := func(req *http.Request) {
-		req.URL.Scheme = target.Scheme
-		req.URL.Host = target.Host
-		req.URL.Path = util.SingleJoiningSlash(target.Path, req.URL.Path)
-		if targetQuery == "" || req.URL.RawQuery == "" {
-			req.URL.RawQuery = targetQuery + req.URL.RawQuery
-		} else {
-			req.URL.RawQuery = targetQuery + "&" + req.URL.RawQuery
-		}
-		if _, ok := req.Header["User-Agent"]; !ok {
-			req.Header.Set("User-Agent", "")
-		}
-		req.Header.Set("X-Forwarded-Proto", "https")
-	}
-	return &httputil.ReverseProxy{Director: director}
 }
