@@ -30,15 +30,15 @@ import (
 )
 
 type runArgs struct {
-	addr  string        `flag:"addr,address to listen at"`
-	conf  string        `flag:"map,file with host/backend mapping"`
-	cache string        `flag:"cacheDir,path to directory to cache key and certificates"`
-	hsts  bool          `flag:"hsts,add Strict-Transport-Security header"`
-	email string        `flag:"email,contact email address presented to letsencrypt CA"`
-	http  string        `flag:"http,optional address to serve http-to-https redirects and ACME http-01 challenge responses"`
-	rto   time.Duration `flag:"rto,maximum duration before timing out read of the request"`
-	wto   time.Duration `flag:"wto,maximum duration before timing out write of the response"`
-	idle  time.Duration `flag:"idle,how long idle connection is kept before closing (set rto, wto to 0 to use this)"`
+	Addr  string        `flag:"addr,address to listen at"`
+	Conf  string        `flag:"map,file with host/backend mapping"`
+	Cache string        `flag:"cacheDir,path to directory to cache key and certificates"`
+	HSTS  bool          `flag:"hsts,add Strict-Transport-Security header"`
+	Email string        `flag:"email,contact email address presented to letsencrypt CA"`
+	HTTP  string        `flag:"http,optional address to serve http-to-https redirects and ACME http-01 challenge responses"`
+	RTO   time.Duration `flag:"rto,maximum duration before timing out read of the request"`
+	WTO   time.Duration `flag:"wto,maximum duration before timing out write of the response"`
+	Idle  time.Duration `flag:"idle,how long idle connection is kept before closing (set rto, wto to 0 to use this)"`
 }
 
 var (
@@ -48,12 +48,12 @@ var (
 
 func main() {
 	args := runArgs{
-		addr:  ":https",
-		http:  ":http",
-		conf:  "mapping.txt",
-		cache: "/var/cache/letsencrypt",
-		rto:   time.Minute,
-		wto:   5 * time.Minute,
+		Addr:  ":https",
+		HTTP:  ":http",
+		Conf:  "mapping.txt",
+		Cache: "/var/cache/letsencrypt",
+		RTO:   time.Minute,
+		WTO:   5 * time.Minute,
 	}
 	autoflags.Parse(&args)
 	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt)
@@ -65,7 +65,7 @@ func main() {
 
 func run(ctx context.Context, args runArgs) (err error) {
 
-	if args.cache == "" {
+	if args.Cache == "" {
 		return fmt.Errorf("no cache specified")
 	}
 
@@ -76,16 +76,16 @@ func run(ctx context.Context, args runArgs) (err error) {
 		return err
 	}
 	srv.ReadHeaderTimeout = 5 * time.Second
-	if args.rto > 0 {
-		srv.ReadTimeout = args.rto
+	if args.RTO > 0 {
+		srv.ReadTimeout = args.RTO
 	}
-	if args.wto > 0 {
-		srv.WriteTimeout = args.wto
+	if args.WTO > 0 {
+		srv.WriteTimeout = args.WTO
 	}
 	group, ctx := errgroup.WithContext(ctx)
-	if args.http != "" {
+	if args.HTTP != "" {
 		httpServer := http.Server{
-			Addr:         args.http,
+			Addr:         args.HTTP,
 			Handler:      httpHandler,
 			ReadTimeout:  10 * time.Second,
 			WriteTimeout: 10 * time.Second,
@@ -99,7 +99,7 @@ func run(ctx context.Context, args runArgs) (err error) {
 			return httpServer.Shutdown(ctx)
 		})
 	}
-	if srv.ReadTimeout != 0 || srv.WriteTimeout != 0 || args.idle == 0 {
+	if srv.ReadTimeout != 0 || srv.WriteTimeout != 0 || args.Idle == 0 {
 		group.Go(func() error { return srv.ListenAndServeTLS("", "") })
 	} else {
 		group.Go(func() error {
@@ -109,7 +109,7 @@ func run(ctx context.Context, args runArgs) (err error) {
 			}
 			defer ln.Close()
 			ln = tcpkeepalive.Listener{
-				Duration:    args.idle,
+				Duration:    args.Idle,
 				TCPListener: ln.(*net.TCPListener),
 			}
 			return srv.ServeTLS(ln, "", "")
@@ -125,7 +125,7 @@ func run(ctx context.Context, args runArgs) (err error) {
 }
 
 func setupServer(a runArgs) (s *http.Server, h http.Handler, e error) {
-	mapping, err := readMapping(a.conf)
+	mapping, err := readMapping(a.Conf)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -133,22 +133,22 @@ func setupServer(a runArgs) (s *http.Server, h http.Handler, e error) {
 	if err != nil {
 		return nil, nil, err
 	}
-	if a.hsts {
+	if a.HSTS {
 		proxy = &hsts.Proxy{Handler: proxy}
 	}
-	if err := os.MkdirAll(a.cache, 0700); err != nil {
+	if err := os.MkdirAll(a.Cache, 0700); err != nil {
 		return nil, nil, fmt.Errorf("cannot create cache directory %q: %v",
-			a.cache, err)
+			a.Cache, err)
 	}
 	m := autocert.Manager{
 		Prompt:     autocert.AcceptTOS,
-		Cache:      autocert.DirCache(a.cache),
+		Cache:      autocert.DirCache(a.Cache),
 		HostPolicy: autocert.HostWhitelist(util.GetKeys(mapping)...),
-		Email:      a.email,
+		Email:      a.Email,
 	}
 	srv := &http.Server{
 		Handler:   proxy,
-		Addr:      a.addr,
+		Addr:      a.Addr,
 		TLSConfig: m.TLSConfig(),
 	}
 	return srv, m.HTTPHandler(nil), nil
