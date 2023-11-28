@@ -92,8 +92,10 @@ func run(ctx context.Context, args runArgs) (e error) {
 			ReadTimeout:  10 * time.Second,
 			WriteTimeout: 10 * time.Second,
 		}
-		group.Go(func() error {
-			return httpServer.ListenAndServe()
+		group.Go(func() (e error) {
+			e = httpServer.ListenAndServe()
+			fails(e)
+			return
 		})
 		group.Go(func() error {
 			<-ctx.Done()
@@ -104,21 +106,25 @@ func run(ctx context.Context, args runArgs) (e error) {
 		})
 	}
 	if srv.ReadTimeout != 0 || srv.WriteTimeout != 0 || args.Idle == 0 {
-		group.Go(func() error {
-			return srv.ListenAndServeTLS("", "")
+		group.Go(func() (e error) {
+			e = srv.ListenAndServeTLS("", "")
+			fails(e)
+			return
 		})
 	} else {
-		group.Go(func() error {
-			ln, err := net.Listen("tcp", srv.Addr)
-			if err != nil {
-				return err
+		group.Go(func() (e error) {
+			var ln net.Listener
+			if ln, e = net.Listen("tcp", srv.Addr); fails(e) {
+				return
 			}
 			defer ln.Close()
 			ln = tcpkeepalive.Listener{
 				Duration:    args.Idle,
 				TCPListener: ln.(*net.TCPListener),
 			}
-			return srv.ServeTLS(ln, "", "")
+			e = srv.ServeTLS(ln, "", "")
+			fails(e)
+			return
 		})
 	}
 	group.Go(func() error {
@@ -145,6 +151,7 @@ func setupServer(a runArgs) (s *http.Server, h http.Handler, e error) {
 	if e = os.MkdirAll(a.Cache, 0700); fails(e) {
 		e = fmt.Errorf("cannot create cache directory %q: %v",
 			a.Cache, e)
+		fails(e)
 		return
 	}
 	m := ac.Manager{
@@ -168,30 +175,32 @@ func setProxy(mapping map[string]string) (h http.Handler, e error) {
 	}
 	mux := http.NewServeMux()
 	for hostname, backendAddr := range mapping {
-		hostname, backendAddr := hostname, backendAddr // intentional shadowing
-		if strings.ContainsRune(hostname, os.PathSeparator) {
-			return nil, fmt.Errorf("invalid hostname: %q", hostname)
+		hn, ba := hostname, backendAddr
+		if strings.ContainsRune(hn, os.PathSeparator) {
+			e = fmt.Errorf("invalid hostname: %q", hn)
+			log.E.Ln(e)
+			return
 		}
 		network := "tcp"
-		if backendAddr != "" && backendAddr[0] == '@' && runtime.GOOS == "linux" {
+		if ba != "" && ba[0] == '@' && runtime.GOOS == "linux" {
 			// append \0 to address so addrlen for connect(2) is calculated in a
 			// way compatible with some other implementations (i.e. uwsgi)
-			network, backendAddr = "unix", backendAddr+string(byte(0))
-		} else if filepath.IsAbs(backendAddr) {
+			network, ba = "unix", ba+string(byte(0))
+		} else if filepath.IsAbs(ba) {
 			network = "unix"
-			if strings.HasSuffix(backendAddr, string(os.PathSeparator)) {
+			if strings.HasSuffix(ba, string(os.PathSeparator)) {
 				// path specified as directory with explicit trailing slash; add
 				// this path as static site
-				mux.Handle(hostname+"/", http.FileServer(http.Dir(backendAddr)))
+				mux.Handle(hn+"/", http.FileServer(http.Dir(ba)))
 				continue
 			}
-		} else if u, err := url.Parse(backendAddr); err == nil {
+		} else if u, err := url.Parse(ba); err == nil {
 			switch u.Scheme {
 			case "http", "https":
 				rp := reverse.NewSingleHostReverseProxy(u)
 				rp.ErrorLog = stdLog.New(io.Discard, "", 0)
 				rp.BufferPool = buf.Pool{}
-				mux.Handle(hostname+"/", rp)
+				mux.Handle(hn+"/", rp)
 				continue
 			}
 		}
@@ -200,27 +209,28 @@ func setProxy(mapping map[string]string) (h http.Handler, e error) {
 				req.URL.Scheme = "http"
 				req.URL.Host = req.Host
 				req.Header.Set("X-Forwarded-Proto", "https")
+				log.D.S(req)
 			},
 			Transport: &http.Transport{
 				Dial: func(netw, addr string) (net.Conn, error) {
-					return net.DialTimeout(network, backendAddr, 5*time.Second)
+					return net.DialTimeout(network, ba, 5*time.Second)
 				},
 			},
 			ErrorLog:   stdLog.New(io.Discard, "", 0),
 			BufferPool: buf.Pool{},
 		}
-		mux.Handle(hostname+"/", rp)
+		mux.Handle(hn+"/", rp)
 	}
 	return mux, nil
 }
 
-func readMapping(file string) (map[string]string, error) {
-	f, err := os.Open(file)
-	if err != nil {
-		return nil, err
+func readMapping(file string) (m map[string]string, e error) {
+	var f *os.File
+	if f, e = os.Open(file); fails(e) {
+		return
 	}
 	defer f.Close()
-	m := make(map[string]string)
+	m = make(map[string]string)
 	sc := bufio.NewScanner(f)
 	for sc.Scan() {
 		if b := sc.Bytes(); len(b) == 0 || b[0] == '#' {
@@ -228,9 +238,13 @@ func readMapping(file string) (map[string]string, error) {
 		}
 		s := strings.SplitN(sc.Text(), ":", 2)
 		if len(s) != 2 {
-			return nil, fmt.Errorf("invalid line: %q", sc.Text())
+			e = fmt.Errorf("invalid line: %q", sc.Text())
+			log.E.Ln(e)
+			return
 		}
 		m[strings.TrimSpace(s[0])] = strings.TrimSpace(s[1])
 	}
-	return m, sc.Err()
+	e = sc.Err()
+	fails(e)
+	return
 }

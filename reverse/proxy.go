@@ -2,9 +2,15 @@ package reverse
 
 import (
 	"mleku.online/git/lerproxy/util"
+	log2 "mleku.online/git/log"
 	"net/http"
 	"net/http/httputil"
 	"net/url"
+)
+
+var (
+	log   = log2.GetLogger()
+	fails = log.E.Chk
 )
 
 // NewSingleHostReverseProxy is a copy of httputil.NewSingleHostReverseProxy
@@ -12,6 +18,7 @@ import (
 func NewSingleHostReverseProxy(target *url.URL) (rp *httputil.ReverseProxy) {
 	targetQuery := target.RawQuery
 	director := func(req *http.Request) {
+		log.D.S(req)
 		req.URL.Scheme = target.Scheme
 		req.URL.Host = target.Host
 		req.URL.Path = util.SingleJoiningSlash(target.Path, req.URL.Path)
