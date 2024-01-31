@@ -8,10 +8,6 @@ import (
 	"fmt"
 	"io"
 	stdLog "log"
-	"mleku.online/git/lerproxy/buf"
-	"mleku.online/git/lerproxy/reverse"
-	"mleku.online/git/lerproxy/tcpkeepalive"
-	"mleku.online/git/lerproxy/util"
 	"net"
 	"net/http"
 	"net/http/httputil"
@@ -22,6 +18,11 @@ import (
 	"runtime"
 	"strings"
 	"time"
+
+	"mleku.online/git/lerproxy/buf"
+	"mleku.online/git/lerproxy/reverse"
+	"mleku.online/git/lerproxy/tcpkeepalive"
+	"mleku.online/git/lerproxy/util"
 
 	ac "golang.org/x/crypto/acme/autocert"
 	"golang.org/x/sync/errgroup"
@@ -199,7 +200,7 @@ func setProxy(mapping map[string]string) (h http.Handler, e error) {
 			switch u.Scheme {
 			case "http", "https":
 				rp := reverse.NewSingleHostReverseProxy(u)
-				rp.ErrorLog = stdLog.New(io.Discard, "", 0)
+				rp.ErrorLog = stdLog.New(os.Stderr, "lerproxy", stdLog.Llongfile)
 				rp.BufferPool = buf.Pool{}
 				mux.Handle(hn+"/", rp)
 				continue
@@ -210,7 +211,8 @@ func setProxy(mapping map[string]string) (h http.Handler, e error) {
 				req.URL.Scheme = "http"
 				req.URL.Host = req.Host
 				req.Header.Set("X-Forwarded-Proto", "https")
-				log.D.S(req)
+				req.Header.Set("X-Forwarded-For", req.RemoteAddr)
+				log.D.Ln(req.URL, req.RemoteAddr)
 			},
 			Transport: &http.Transport{
 				Dial: func(netw, addr string) (net.Conn, error) {
