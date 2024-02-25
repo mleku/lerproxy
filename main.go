@@ -19,46 +19,39 @@ import (
 	"strings"
 	"time"
 
-	"mleku.online/git/lerproxy/buf"
-	"mleku.online/git/lerproxy/reverse"
-	"mleku.online/git/lerproxy/tcpkeepalive"
-	"mleku.online/git/lerproxy/util"
-
-	ac "golang.org/x/crypto/acme/autocert"
+	"github.com/alexflint/go-arg"
+	"golang.org/x/crypto/acme/autocert"
 	"golang.org/x/sync/errgroup"
-	"mleku.online/git/autoflags"
-	"mleku.online/git/lerproxy/hsts"
-	log2 "mleku.online/git/log"
+	"mleku.dev/git/lerproxy/buf"
+	"mleku.dev/git/lerproxy/hsts"
+	"mleku.dev/git/lerproxy/reverse"
+	"mleku.dev/git/lerproxy/tcpkeepalive"
+	"mleku.dev/git/lerproxy/util"
+	"mleku.dev/git/slog"
 )
 
 type runArgs struct {
-	Addr  string        `flag:"addr,address to listen at"`
-	Conf  string        `flag:"map,file with host/backend mapping"`
-	Cache string        `flag:"cacheDir,path to directory to cache key and certificates"`
-	HSTS  bool          `flag:"hsts,add Strict-Transport-Security header"`
-	Email string        `flag:"email,contact email address presented to letsencrypt CA"`
-	HTTP  string        `flag:"http,optional address to serve http-to-https redirects and ACME http-01 challenge responses"`
-	RTO   time.Duration `flag:"rto,maximum duration before timing out read of the request"`
-	WTO   time.Duration `flag:"wto,maximum duration before timing out write of the response"`
-	Idle  time.Duration `flag:"idle,how long idle connection is kept before closing (set rto, wto to 0 to use this)"`
+	Addr     string        `arg:"-l,--listen" default:":https" help:"address to listen at"`
+	Conf     string        `arg:"-m,--map" default:"mapping.txt" help:"file with host/backend mapping"`
+	Rewrites string        `arg:"-r,--rewrites" default:"rewrites.txt"`
+	Cache    string        `arg:"-c,--cachedir" default:"/var/cache/letsencrypt" help:"path to directory to cache key and certificates"`
+	HSTS     bool          `arg:"-h,--hsts" help:"add Strict-Transport-Security header"`
+	Email    string        `arg:"-e,--email" help:"contact email address presented to letsencrypt CA"`
+	HTTP     string        `arg:"--http" default:":http" help:"optional address to serve http-to-https redirects and ACME http-01 challenge responses"`
+	RTO      time.Duration `arg:"-r,--rto" default:"1m" help:"maximum duration before timing out read of the request"`
+	WTO      time.Duration `arg:"-w,--wto" default:"5m" help:"maximum duration before timing out write of the response"`
+	Idle     time.Duration `arg:"-i,--idle" help:"how long idle connection is kept before closing (set rto, wto to 0 to use this)"`
 }
 
+var args runArgs
+
 var (
-	log   = log2.GetLogger()
-	fails = log.E.Chk
+	log, chk = slog.New(os.Stderr)
 )
 
 func main() {
-	log2.SetLogLevel(log2.Trace)
-	args := runArgs{
-		Addr:  ":https",
-		HTTP:  ":http",
-		Conf:  "mapping.txt",
-		Cache: "/var/cache/letsencrypt",
-		RTO:   time.Minute,
-		WTO:   5 * time.Minute,
-	}
-	autoflags.Parse(&args)
+	slog.SetLogLevel(slog.Trace)
+	arg.MustParse(&args)
 	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt)
 	defer cancel()
 	if err := run(ctx, args); err != nil {
@@ -66,17 +59,16 @@ func main() {
 	}
 }
 
-func run(ctx context.Context, args runArgs) (e error) {
+func run(ctx context.Context, args runArgs) (err error) {
 
 	if args.Cache == "" {
-		e = fmt.Errorf("no cache specified")
-		log.E.Ln(e)
+		err = log.E.Err("no cache specified")
 		return
 	}
 
 	var srv *http.Server
 	var httpHandler http.Handler
-	if srv, httpHandler, e = setupServer(args); fails(e) {
+	if srv, httpHandler, err = setupServer(args); chk.E(err) {
 		return
 	}
 	srv.ReadHeaderTimeout = 5 * time.Second
@@ -94,9 +86,8 @@ func run(ctx context.Context, args runArgs) (e error) {
 			ReadTimeout:  10 * time.Second,
 			WriteTimeout: 10 * time.Second,
 		}
-		group.Go(func() (e error) {
-			e = httpServer.ListenAndServe()
-			fails(e)
+		group.Go(func() (err error) {
+			chk.E(httpServer.ListenAndServe())
 			return
 		})
 		group.Go(func() error {
@@ -108,15 +99,14 @@ func run(ctx context.Context, args runArgs) (e error) {
 		})
 	}
 	if srv.ReadTimeout != 0 || srv.WriteTimeout != 0 || args.Idle == 0 {
-		group.Go(func() (e error) {
-			e = srv.ListenAndServeTLS("", "")
-			fails(e)
+		group.Go(func() (err error) {
+			chk.E(srv.ListenAndServeTLS("", ""))
 			return
 		})
 	} else {
-		group.Go(func() (e error) {
+		group.Go(func() (err error) {
 			var ln net.Listener
-			if ln, e = net.Listen("tcp", srv.Addr); fails(e) {
+			if ln, err = net.Listen("tcp", srv.Addr); chk.E(err) {
 				return
 			}
 			defer ln.Close()
@@ -124,8 +114,8 @@ func run(ctx context.Context, args runArgs) (e error) {
 				Duration:    args.Idle,
 				TCPListener: ln.(*net.TCPListener),
 			}
-			e = srv.ServeTLS(ln, "", "")
-			fails(e)
+			err = srv.ServeTLS(ln, "", "")
+			chk.E(err)
 			return
 		})
 	}
@@ -138,28 +128,28 @@ func run(ctx context.Context, args runArgs) (e error) {
 	return group.Wait()
 }
 
-func setupServer(a runArgs) (s *http.Server, h http.Handler, e error) {
+func setupServer(a runArgs) (s *http.Server, h http.Handler, err error) {
 	var mapping map[string]string
-	if mapping, e = readMapping(a.Conf); e != nil {
+	if mapping, err = readMapping(a.Conf); chk.E(err) {
 		return
 	}
 	var proxy http.Handler
-	if proxy, e = setProxy(mapping); fails(e) {
+	if proxy, err = setProxy(mapping); chk.E(err) {
 		return
 	}
 	if a.HSTS {
 		proxy = &hsts.Proxy{Handler: proxy}
 	}
-	if e = os.MkdirAll(a.Cache, 0700); fails(e) {
-		e = fmt.Errorf("cannot create cache directory %q: %v",
-			a.Cache, e)
-		fails(e)
+	if err = os.MkdirAll(a.Cache, 0700); chk.E(err) {
+		err = fmt.Errorf("cannot create cache directory %q: %v",
+			a.Cache, err)
+		chk.E(err)
 		return
 	}
-	m := ac.Manager{
-		Prompt:     ac.AcceptTOS,
-		Cache:      ac.DirCache(a.Cache),
-		HostPolicy: ac.HostWhitelist(util.GetKeys(mapping)...),
+	m := autocert.Manager{
+		Prompt:     autocert.AcceptTOS,
+		Cache:      autocert.DirCache(a.Cache),
+		HostPolicy: autocert.HostWhitelist(util.GetKeys(mapping)...),
 		Email:      a.Email,
 	}
 	s = &http.Server{
@@ -171,7 +161,7 @@ func setupServer(a runArgs) (s *http.Server, h http.Handler, e error) {
 	return
 }
 
-func setProxy(mapping map[string]string) (h http.Handler, e error) {
+func setProxy(mapping map[string]string) (h http.Handler, err error) {
 	if len(mapping) == 0 {
 		return nil, fmt.Errorf("empty mapping")
 	}
@@ -179,8 +169,7 @@ func setProxy(mapping map[string]string) (h http.Handler, e error) {
 	for hostname, backendAddr := range mapping {
 		hn, ba := hostname, backendAddr
 		if strings.ContainsRune(hn, os.PathSeparator) {
-			e = fmt.Errorf("invalid hostname: %q", hn)
-			log.E.Ln(e)
+			err = log.E.Err("invalid hostname: %q", hn)
 			return
 		}
 		network := "tcp"
@@ -215,7 +204,9 @@ func setProxy(mapping map[string]string) (h http.Handler, e error) {
 				log.D.Ln(req.URL, req.RemoteAddr)
 			},
 			Transport: &http.Transport{
-				Dial: func(netw, addr string) (net.Conn, error) {
+				DialContext: func(ctx context.Context,
+					n, addr string) (net.Conn, error) {
+
 					return net.DialTimeout(network, ba, 5*time.Second)
 				},
 			},
@@ -227,12 +218,12 @@ func setProxy(mapping map[string]string) (h http.Handler, e error) {
 	return mux, nil
 }
 
-func readMapping(file string) (m map[string]string, e error) {
+func readMapping(file string) (m map[string]string, err error) {
 	var f *os.File
-	if f, e = os.Open(file); fails(e) {
+	if f, err = os.Open(file); chk.E(err) {
 		return
 	}
-	defer f.Close()
+	defer chk.E(f.Close())
 	m = make(map[string]string)
 	sc := bufio.NewScanner(f)
 	for sc.Scan() {
@@ -241,13 +232,13 @@ func readMapping(file string) (m map[string]string, e error) {
 		}
 		s := strings.SplitN(sc.Text(), ":", 2)
 		if len(s) != 2 {
-			e = fmt.Errorf("invalid line: %q", sc.Text())
-			log.E.Ln(e)
+			err = fmt.Errorf("invalid line: %q", sc.Text())
+			log.E.Ln(err)
 			return
 		}
 		m[strings.TrimSpace(s[0])] = strings.TrimSpace(s[1])
 	}
-	e = sc.Err()
-	fails(e)
+	err = sc.Err()
+	chk.E(err)
 	return
 }

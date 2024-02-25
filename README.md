@@ -1,24 +1,25 @@
-# leproxy
+# lerproxy
 
-Command leproxy implements https reverse proxy with automatic Letsencrypt
-usage for multiple hostnames/backends
+Command lerproxy implements https reverse proxy with automatic LetsEncrypt
+usage for multiple hostnames/backends, and URL rewriting.
 
 Install:
 
-	go install github.com/artyom/leproxy@latest
+	go install mleku.dev/git/lerproxy@latest
 
 Run:
 
-	leproxy -addr :https -map /path/to/mapping.txt -cacheDir /path/to/letsencrypt
+	lerproxy -addr :https -map /path/to/mapping.txt -cacheDir /path/to/letsencrypt
 
-`mapping.txt` contains host-to-backend mapping, where backend can be specified as:
+`mapping.txt` contains host-to-backend mapping, where backend can be specified
+as:
 
- * http/https url for http(s) connections to backend *without* passing "Host"
-   header from request;
- * host:port for http over TCP connections to backend;
- * absolute path for http over unix socket connections;
- * @name for http over abstract unix socket connections (linux only);
- * absolute path with a trailing slash to serve files from a given directory.
+* http/https url for http(s) connections to backend *without* passing "Host"
+  header from request;
+* host:port for http over TCP connections to backend;
+* absolute path for http over unix socket connections;
+* @name for http over abstract unix socket connections (linux only);
+* absolute path with a trailing slash to serve files from a given directory.
 
 Example:
 

@@ -1,15 +1,16 @@
 package tcpkeepalive
 
 import (
-	"mleku.online/git/lerproxy/timeout"
-	log2 "mleku.online/git/log"
 	"net"
+	"os"
 	"time"
+
+	"mleku.dev/git/lerproxy/timeout"
+	"mleku.dev/git/slog"
 )
 
 var (
-	log   = log2.GetLogger()
-	fails = log.E.Chk
+	log, chk = slog.New(os.Stderr)
 )
 
 // Period can be changed prior to opening a Listener to alter its'
@@ -26,13 +27,13 @@ type Listener struct {
 
 func (ln Listener) Accept() (conn net.Conn, e error) {
 	var tc *net.TCPConn
-	if tc, e = ln.AcceptTCP(); fails(e) {
+	if tc, e = ln.AcceptTCP(); chk.E(e) {
 		return
 	}
-	if e = tc.SetKeepAlive(true); fails(e) {
+	if e = tc.SetKeepAlive(true); chk.E(e) {
 		return
 	}
-	if e = tc.SetKeepAlivePeriod(Period); fails(e) {
+	if e = tc.SetKeepAlivePeriod(Period); chk.E(e) {
 		return
 	}
 	if ln.Duration != 0 {

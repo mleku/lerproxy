@@ -1,14 +1,15 @@
 package timeout
 
 import (
-	log2 "mleku.online/git/log"
 	"net"
+	"os"
 	"time"
+
+	"mleku.dev/git/slog"
 )
 
 var (
-	log   = log2.GetLogger()
-	fails = log.E.Chk
+	log, chk = slog.New(os.Stderr)
 )
 
 // Conn extends deadline after successful read or write operations
@@ -18,16 +19,16 @@ type Conn struct {
 }
 
 func (c Conn) Read(b []byte) (n int, e error) {
-	if n, e = c.TCPConn.Read(b); !fails(e) {
-		if e = c.SetDeadline(c.getTimeout()); fails(e) {
+	if n, e = c.TCPConn.Read(b); !chk.E(e) {
+		if e = c.SetDeadline(c.getTimeout()); chk.E(e) {
 		}
 	}
 	return
 }
 
 func (c Conn) Write(b []byte) (n int, e error) {
-	if n, e = c.TCPConn.Write(b); !fails(e) {
-		if e = c.SetDeadline(c.getTimeout()); fails(e) {
+	if n, e = c.TCPConn.Write(b); !chk.E(e) {
+		if e = c.SetDeadline(c.getTimeout()); chk.E(e) {
 		}
 	}
 	return
