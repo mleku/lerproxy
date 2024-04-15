@@ -189,6 +189,13 @@ func setProxy(mapping map[string]string) (h http.Handler, err error) {
 			switch u.Scheme {
 			case "http", "https":
 				rp := reverse.NewSingleHostReverseProxy(u)
+				modifyCORSResponse := func(res *http.Response) error {
+					res.Header.Set("Access-Control-Allow-Methods", "GET,HEAD,PUT,PATCH,POST,DELETE")
+					res.Header.Set("Access-Control-Allow-Credentials", "true")
+					res.Header.Set("Access-Control-Allow-Origin", "*")
+					return nil
+				}
+				rp.ModifyResponse = modifyCORSResponse
 				rp.ErrorLog = stdLog.New(os.Stderr, "lerproxy", stdLog.Llongfile)
 				rp.BufferPool = buf.Pool{}
 				mux.Handle(hn+"/", rp)
@@ -201,7 +208,6 @@ func setProxy(mapping map[string]string) (h http.Handler, err error) {
 				req.URL.Host = req.Host
 				req.Header.Set("X-Forwarded-Proto", "https")
 				req.Header.Set("X-Forwarded-For", req.RemoteAddr)
-				req.Header.Set("Access-Control-Allow-Origin", "*")
 				log.D.Ln(req.URL, req.RemoteAddr)
 			},
 			Transport: &http.Transport{
@@ -224,7 +230,6 @@ func readMapping(file string) (m map[string]string, err error) {
 	if f, err = os.Open(file); chk.E(err) {
 		return
 	}
-	defer chk.E(f.Close())
 	m = make(map[string]string)
 	sc := bufio.NewScanner(f)
 	for sc.Scan() {
@@ -235,11 +240,13 @@ func readMapping(file string) (m map[string]string, err error) {
 		if len(s) != 2 {
 			err = fmt.Errorf("invalid line: %q", sc.Text())
 			log.E.Ln(err)
+			chk.E(f.Close())
 			return
 		}
 		m[strings.TrimSpace(s[0])] = strings.TrimSpace(s[1])
 	}
 	err = sc.Err()
 	chk.E(err)
+	chk.E(f.Close())
 	return
 }
