@@ -201,6 +201,7 @@ func setProxy(mapping map[string]string) (h http.Handler, err error) {
 				req.URL.Host = req.Host
 				req.Header.Set("X-Forwarded-Proto", "https")
 				req.Header.Set("X-Forwarded-For", req.RemoteAddr)
+				req.Header.Set("Access-Control-Allow-Origin", "*")
 				log.D.Ln(req.URL, req.RemoteAddr)
 			},
 			Transport: &http.Transport{
