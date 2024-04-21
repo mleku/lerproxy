@@ -162,6 +162,11 @@ func setupServer(a runArgs) (s *http.Server, h http.Handler, err error) {
 	return
 }
 
+type NostrJSON struct {
+	Names  map[string]string   `json:"names"`
+	Relays map[string][]string `json:"relays"`
+}
+
 func setProxy(mapping map[string]string) (h http.Handler, err error) {
 	if len(mapping) == 0 {
 		return nil, fmt.Errorf("empty mapping")
@@ -193,24 +198,22 @@ func setProxy(mapping map[string]string) (h http.Handler, err error) {
 				if fb, err = os.ReadFile(ba); chk.E(err) {
 					continue
 				}
-				// nostrjson = string(jb)
-				nostrjson := string(fb)
+				var v NostrJSON
+				if err = json.Unmarshal(fb, &v); chk.E(err) {
+					continue
+				}
+				var jb []byte
+				if jb, err = json.Marshal(v); chk.E(err) {
+					continue
+				}
+				nostrJSON := string(jb)
 				mux.HandleFunc(hn+"/.well-known/nostr.json", func(writer http.ResponseWriter, request *http.Request) {
 					log.I.Ln("serving nostr json to", hn)
 					writer.Header().Set("Access-Control-Allow-Methods", "GET,HEAD,PUT,PATCH,POST,DELETE")
 					writer.Header().Set("Access-Control-Allow-Origin", "*")
-					fmt.Fprint(writer, nostrjson)
+					writer.Header().Set("Content-Type", "text/json")
+					fmt.Fprint(writer, nostrJSON)
 				})
-				var v any
-				if err = json.Unmarshal(fb, v); chk.E(err) {
-					// continue
-				}
-				// var nostrjson string
-				// var jb []byte
-				// if jb, err = json.Marshal(v); chk.E(err) {
-				// 	continue
-				// }
-				// nostrjson = string(jb)
 				continue
 			}
 		} else if u, err := url.Parse(ba); err == nil {
