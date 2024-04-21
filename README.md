@@ -24,6 +24,7 @@ as:
 
 Example:
 
+    nostr.example.com: /path/to/nostr.json
 	subdomain1.example.com: 127.0.0.1:8080
 	subdomain2.example.com: /var/run/http.socket
 	subdomain3.example.com: @abstractUnixSocket
