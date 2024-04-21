@@ -6,7 +6,7 @@ import (
 	"net/url"
 	"os"
 
-	"mleku.dev/git/lerproxy/util"
+	"mleku.com/git/lerproxy/util"
 	"mleku.dev/git/slog"
 )
 

@@ -5,7 +5,7 @@ import (
 	"os"
 	"time"
 
-	"mleku.dev/git/lerproxy/timeout"
+	"mleku.com/git/lerproxy/timeout"
 	"mleku.dev/git/slog"
 )
 

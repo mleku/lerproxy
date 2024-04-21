@@ -27,7 +27,7 @@ import (
 	"mleku.com/git/lerproxy/reverse"
 	"mleku.com/git/lerproxy/tcpkeepalive"
 	"mleku.com/git/lerproxy/util"
-	"mleku.com/git/slog"
+	"mleku.dev/git/slog"
 )
 
 type runArgs struct {
