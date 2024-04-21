@@ -22,12 +22,12 @@ import (
 	"github.com/alexflint/go-arg"
 	"golang.org/x/crypto/acme/autocert"
 	"golang.org/x/sync/errgroup"
-	"mleku.dev/git/lerproxy/buf"
-	"mleku.dev/git/lerproxy/hsts"
-	"mleku.dev/git/lerproxy/reverse"
-	"mleku.dev/git/lerproxy/tcpkeepalive"
-	"mleku.dev/git/lerproxy/util"
-	"mleku.dev/git/slog"
+	"mleku.com/git/lerproxy/buf"
+	"mleku.com/git/lerproxy/hsts"
+	"mleku.com/git/lerproxy/reverse"
+	"mleku.com/git/lerproxy/tcpkeepalive"
+	"mleku.com/git/lerproxy/util"
+	"mleku.com/git/slog"
 )
 
 type runArgs struct {

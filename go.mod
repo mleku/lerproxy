@@ -1,4 +1,4 @@
-module mleku.dev/git/lerproxy
+module mleku.com/git/lerproxy
 
 go 1.22
 

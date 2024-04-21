@@ -1,11 +1,12 @@
 # lerproxy
 
 Command lerproxy implements https reverse proxy with automatic LetsEncrypt
-usage for multiple hostnames/backends, and URL rewriting.
+usage for multiple hostnames/backends including a static filesystem directory, nostr 
+[NIP-05](https://github.com/nostr-protocol/nips/blob/master/05.md) hosting ~~and URL rewriting (TODO)~~.
 
 Install:
 
-	go install mleku.dev/git/lerproxy@latest
+	go install mleku.com/git/lerproxy@latest
 
 Run:
 
