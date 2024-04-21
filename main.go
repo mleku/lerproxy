@@ -212,6 +212,8 @@ func setProxy(mapping map[string]string) (h http.Handler, err error) {
 					writer.Header().Set("Access-Control-Allow-Methods", "GET,HEAD,PUT,PATCH,POST,DELETE")
 					writer.Header().Set("Access-Control-Allow-Origin", "*")
 					writer.Header().Set("Content-Type", "application/json")
+					writer.Header().Set("Content-Length", fmt.Sprint(len(nostrJSON)))
+					writer.Header().Set("strict-transport-security", "max-age=0; includeSubDomains")
 					fmt.Fprint(writer, nostrJSON)
 				})
 				continue
