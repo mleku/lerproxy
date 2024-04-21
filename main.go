@@ -203,14 +203,14 @@ func setProxy(mapping map[string]string) (h http.Handler, err error) {
 				})
 				var v any
 				if err = json.Unmarshal(fb, v); chk.E(err) {
-					continue
+					// continue
 				}
 				// var nostrjson string
-				var jb []byte
-				if jb, err = json.Marshal(v); chk.E(err) {
-					continue
-				}
-				nostrjson = string(jb)
+				// var jb []byte
+				// if jb, err = json.Marshal(v); chk.E(err) {
+				// 	continue
+				// }
+				// nostrjson = string(jb)
 				continue
 			}
 		} else if u, err := url.Parse(ba); err == nil {
