@@ -179,10 +179,24 @@ func setProxy(mapping map[string]string) (h http.Handler, err error) {
 			network, ba = "unix", ba+string(byte(0))
 		} else if filepath.IsAbs(ba) {
 			network = "unix"
-			if strings.HasSuffix(ba, string(os.PathSeparator)) {
+			switch {
+			case strings.HasSuffix(ba, string(os.PathSeparator)):
 				// path specified as directory with explicit trailing slash; add
 				// this path as static site
-				mux.Handle(hn+"/", http.FileServer(http.Dir(ba)))
+				fs := http.FileServer(http.Dir(ba))
+				mux.Handle(hn+"/", fs)
+				continue
+			case strings.HasSuffix(ba, "nostr.json"):
+				var fb []byte
+				if fb, err = os.ReadFile(ba); chk.E(err) {
+					continue
+				}
+				mux.HandleFunc(hn+"/.well-known/nostr.json", func(writer http.ResponseWriter, request *http.Request) {
+					log.I.Ln("serving nostr json to", hn)
+					writer.Header().Set("Access-Control-Allow-Methods", "GET,HEAD,PUT,PATCH,POST,DELETE")
+					writer.Header().Set("Access-Control-Allow-Origin", "*")
+					fmt.Fprint(writer, string(fb))
+				})
 				continue
 			}
 		} else if u, err := url.Parse(ba); err == nil {
@@ -191,7 +205,7 @@ func setProxy(mapping map[string]string) (h http.Handler, err error) {
 				rp := reverse.NewSingleHostReverseProxy(u)
 				modifyCORSResponse := func(res *http.Response) error {
 					res.Header.Set("Access-Control-Allow-Methods", "GET,HEAD,PUT,PATCH,POST,DELETE")
-					res.Header.Set("Access-Control-Allow-Credentials", "true")
+					// res.Header.Set("Access-Control-Allow-Credentials", "true")
 					res.Header.Set("Access-Control-Allow-Origin", "*")
 					return nil
 				}
@@ -209,7 +223,7 @@ func setProxy(mapping map[string]string) (h http.Handler, err error) {
 				req.Header.Set("X-Forwarded-Proto", "https")
 				req.Header.Set("X-Forwarded-For", req.RemoteAddr)
 				req.Header.Set("Access-Control-Allow-Methods", "GET,HEAD,PUT,PATCH,POST,DELETE")
-				req.Header.Set("Access-Control-Allow-Credentials", "true")
+				// req.Header.Set("Access-Control-Allow-Credentials", "true")
 				req.Header.Set("Access-Control-Allow-Origin", "*")
 				log.D.Ln(req.URL, req.RemoteAddr)
 			},
