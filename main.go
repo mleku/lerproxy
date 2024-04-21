@@ -188,26 +188,29 @@ func setProxy(mapping map[string]string) (h http.Handler, err error) {
 				mux.Handle(hn+"/", fs)
 				continue
 			case strings.HasSuffix(ba, "nostr.json"):
+				log.I.Ln(hn, ba)
 				var fb []byte
 				if fb, err = os.ReadFile(ba); chk.E(err) {
 					continue
 				}
-				var v any
-				if err = json.Unmarshal(fb, v); chk.E(err) {
-					continue
-				}
-				var nostrjson string
-				var jb []byte
-				if jb, err = json.Marshal(v); chk.E(err) {
-					continue
-				}
-				nostrjson = string(jb)
+				// nostrjson = string(jb)
+				nostrjson := string(fb)
 				mux.HandleFunc(hn+"/.well-known/nostr.json", func(writer http.ResponseWriter, request *http.Request) {
 					log.I.Ln("serving nostr json to", hn)
 					writer.Header().Set("Access-Control-Allow-Methods", "GET,HEAD,PUT,PATCH,POST,DELETE")
 					writer.Header().Set("Access-Control-Allow-Origin", "*")
 					fmt.Fprint(writer, nostrjson)
 				})
+				var v any
+				if err = json.Unmarshal(fb, v); chk.E(err) {
+					continue
+				}
+				// var nostrjson string
+				var jb []byte
+				if jb, err = json.Marshal(v); chk.E(err) {
+					continue
+				}
+				nostrjson = string(jb)
 				continue
 			}
 		} else if u, err := url.Parse(ba); err == nil {
