@@ -5,7 +5,7 @@ import (
 	"os"
 	"time"
 
-	"mleku.dev/git/slog"
+	"mleku.net/slog"
 )
 
 var (

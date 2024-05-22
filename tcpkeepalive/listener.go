@@ -5,8 +5,8 @@ import (
 	"os"
 	"time"
 
-	"mleku.com/git/lerproxy/timeout"
-	"mleku.dev/git/slog"
+	"mleku.net/lerproxy/timeout"
+	"mleku.net/slog"
 )
 
 var (

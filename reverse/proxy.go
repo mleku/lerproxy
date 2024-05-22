@@ -6,8 +6,8 @@ import (
 	"net/url"
 	"os"
 
-	"mleku.com/git/lerproxy/util"
-	"mleku.dev/git/slog"
+	"mleku.net/lerproxy/util"
+	"mleku.net/slog"
 )
 
 var (

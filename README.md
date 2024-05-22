@@ -4,11 +4,11 @@ Command lerproxy implements https reverse proxy with automatic LetsEncrypt
 usage for multiple hostnames/backends including a static filesystem directory, nostr 
 [NIP-05](https://github.com/nostr-protocol/nips/blob/master/05.md) hosting ~~and URL rewriting (TODO)~~.
 
-Install:
+## Install
 
-	go install mleku.com/git/lerproxy@latest
+	go install mleku.net/lerproxy@latest
 
-Run:
+## Run
 
 	lerproxy -addr :https -map /path/to/mapping.txt -cacheDir /path/to/letsencrypt
 
@@ -22,7 +22,7 @@ as:
 * @name for http over abstract unix socket connections (linux only);
 * absolute path with a trailing slash to serve files from a given directory.
 
-Example:
+## example mapping.txt
 
     nostr.example.com: /path/to/nostr.json
 	subdomain1.example.com: 127.0.0.1:8080
@@ -38,3 +38,17 @@ calculate addrlen including trailing zero byte despite [documentation not
 requiring that](http://man7.org/linux/man-pages/man7/unix.7.html). It won't
 work with other implementations that calculate addrlen differently (i.e. by
 taking into account only `strlen(addr)` like Go, or even `UNIX_PATH_MAX`).
+
+## systemd service file
+
+```
+[Unit]
+Description=lerproxy
+
+[Service]
+ExecStart=/usr/local/bin/lerproxy -m /path/to/mapping.txt -l xxx.xxx.xxx.xxx:443 --http xxx.xxx.xxx.6:80
+User=prox
+
+[Install]
+WantedBy=multi-user.target
+```
