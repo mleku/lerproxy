@@ -6,7 +6,7 @@ usage for multiple hostnames/backends including a static filesystem directory, n
 
 ## Install
 
-	go install mleku.net/lerproxy@latest
+	go install github.com/mleku/lerproxy@latest
 
 ## Run
 
@@ -20,7 +20,14 @@ as:
 * host:port for http over TCP connections to backend;
 * absolute path for http over unix socket connections;
 * @name for http over abstract unix socket connections (linux only);
-* absolute path with a trailing slash to serve files from a given directory.
+* absolute path with a trailing slash to serve files from a given directory;
+* path to a nostr.json file containing a
+  [nip-05](https://github.com/nostr-protocol/nips/blob/master/05.md) and 
+  hosting it at `https://example.com/.well-known/nostr.json`
+* using the prefix `git+` and a full web address path after it, generate html 
+  with the necessary meta tags that indicate to the `go` tool when fetching 
+  dependencies from the address found after the `+`. You must have subdomain 
+  wildcard 
 
 ## example mapping.txt
 
@@ -31,6 +38,7 @@ as:
 	uploads.example.com: https://uploads-bucket.s3.amazonaws.com
 	# this is a comment, it can only start on a new line
 	static.example.com: /var/www/
+    awesome-go-project.example.com: git+https://github.com/crappy-name/crappy-go-project-name
 
 Note that when `@name` backend is specified, connection to abstract unix socket
 is made in a manner compatible with some other implementations like uWSGI, that

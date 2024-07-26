@@ -21,13 +21,13 @@ import (
 	"time"
 
 	"github.com/alexflint/go-arg"
+	"github.com/mleku/lerproxy/buf"
+	"github.com/mleku/lerproxy/hsts"
+	"github.com/mleku/lerproxy/reverse"
+	"github.com/mleku/lerproxy/tcpkeepalive"
+	"github.com/mleku/lerproxy/util"
 	"golang.org/x/crypto/acme/autocert"
 	"golang.org/x/sync/errgroup"
-	"mleku.net/lerproxy/buf"
-	"mleku.net/lerproxy/hsts"
-	"mleku.net/lerproxy/reverse"
-	"mleku.net/lerproxy/tcpkeepalive"
-	"mleku.net/lerproxy/util"
 	"mleku.net/slog"
 )
 
@@ -183,6 +183,24 @@ func setProxy(mapping map[string]string) (h http.Handler, err error) {
 			// append \0 to address so addrlen for connect(2) is calculated in a
 			// way compatible with some other implementations (i.e. uwsgi)
 			network, ba = "unix", ba+string(byte(0))
+		} else if strings.HasPrefix(ba, "git+") {
+			split := strings.Split(ba, "git+")
+			if len(split) != 2 {
+				log.E.Ln("invalid go vanity redirect: %s: %s", hn, ba)
+				continue
+			}
+			redirector := fmt.Sprintf(
+				`<html><head><meta name="go-import" content="%s git %s"><meta http-equiv = "refresh" content = " 3 ; url = %s"/></head><body><a href="%s">%s</a></body></html>`,
+				ba, split[1], split[1], split[1], split[1])
+			mux.HandleFunc(hn+"/.well-known/nostr.json", func(writer http.ResponseWriter, request *http.Request) {
+				log.I.Ln("serving nostr json to", hn)
+				writer.Header().Set("Access-Control-Allow-Methods", "GET,HEAD,PUT,PATCH,POST,DELETE")
+				writer.Header().Set("Access-Control-Allow-Origin", "*")
+				writer.Header().Set("Content-Type", "application/json")
+				writer.Header().Set("Content-Length", fmt.Sprint(len(redirector)))
+				writer.Header().Set("strict-transport-security", "max-age=0; includeSubDomains")
+				fmt.Fprint(writer, redirector)
+			})
 		} else if filepath.IsAbs(ba) {
 			network = "unix"
 			switch {

@@ -2,15 +2,9 @@ package tcpkeepalive
 
 import (
 	"net"
-	"os"
 	"time"
 
-	"mleku.net/lerproxy/timeout"
-	"mleku.net/slog"
-)
-
-var (
-	log, chk = slog.New(os.Stderr)
+	"github.com/mleku/lerproxy/timeout"
 )
 
 // Period can be changed prior to opening a Listener to alter its'

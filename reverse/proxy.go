@@ -4,14 +4,8 @@ import (
 	"net/http"
 	"net/http/httputil"
 	"net/url"
-	"os"
 
-	"mleku.net/lerproxy/util"
-	"mleku.net/slog"
-)
-
-var (
-	log, chk = slog.New(os.Stderr)
+	"github.com/mleku/lerproxy/util"
 )
 
 // NewSingleHostReverseProxy is a copy of httputil.NewSingleHostReverseProxy

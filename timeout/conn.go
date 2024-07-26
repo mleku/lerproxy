@@ -2,14 +2,7 @@ package timeout
 
 import (
 	"net"
-	"os"
 	"time"
-
-	"mleku.net/slog"
-)
-
-var (
-	log, chk = slog.New(os.Stderr)
 )
 
 // Conn extends deadline after successful read or write operations
