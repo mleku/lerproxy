@@ -190,17 +190,17 @@ func setProxy(mapping map[string]string) (h http.Handler, err error) {
 				continue
 			}
 			redirector := fmt.Sprintf(
-				`<html><head><meta name="go-import" content="%s git %s"><meta http-equiv = "refresh" content = " 3 ; url = %s"/></head><body><a href="%s">%s</a></body></html>`,
-				ba, split[1], split[1], split[1], split[1])
-			mux.HandleFunc(hn+"/.well-known/nostr.json", func(writer http.ResponseWriter, request *http.Request) {
-				log.I.Ln("serving nostr json to", hn)
+				`<html><head><meta name="go-import" content="%s git %s"/><meta http-equiv = "refresh" content = " 3 ; url = %s"/></head><body>redirecting to <a href="%s">%s</a></body></html>`,
+				hn, split[1], split[1], split[1], split[1])
+			mux.HandleFunc(hn, func(writer http.ResponseWriter, request *http.Request) {
 				writer.Header().Set("Access-Control-Allow-Methods", "GET,HEAD,PUT,PATCH,POST,DELETE")
 				writer.Header().Set("Access-Control-Allow-Origin", "*")
-				writer.Header().Set("Content-Type", "application/json")
+				writer.Header().Set("Content-Type", "text/html")
 				writer.Header().Set("Content-Length", fmt.Sprint(len(redirector)))
 				writer.Header().Set("strict-transport-security", "max-age=0; includeSubDomains")
 				fmt.Fprint(writer, redirector)
 			})
+			continue
 		} else if filepath.IsAbs(ba) {
 			network = "unix"
 			switch {
