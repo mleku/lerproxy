@@ -192,7 +192,7 @@ func setProxy(mapping map[string]string) (h http.Handler, err error) {
 			redirector := fmt.Sprintf(
 				`<html><head><meta name="go-import" content="%s git %s"/><meta http-equiv = "refresh" content = " 3 ; url = %s"/></head><body>redirecting to <a href="%s">%s</a></body></html>`,
 				hn, split[1], split[1], split[1], split[1])
-			mux.HandleFunc(hn, func(writer http.ResponseWriter, request *http.Request) {
+			mux.HandleFunc(hn+"/", func(writer http.ResponseWriter, request *http.Request) {
 				writer.Header().Set("Access-Control-Allow-Methods", "GET,HEAD,PUT,PATCH,POST,DELETE")
 				writer.Header().Set("Access-Control-Allow-Origin", "*")
 				writer.Header().Set("Content-Type", "text/html")
