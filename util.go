@@ -1,4 +1,4 @@
-package hsts
+package main
 
 import (
 	"bytes"

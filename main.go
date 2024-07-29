@@ -21,14 +21,13 @@ import (
 	"time"
 
 	"github.com/alexflint/go-arg"
-	"github.com/mleku/lerproxy/buf"
-	"github.com/mleku/lerproxy/hsts"
-	"github.com/mleku/lerproxy/reverse"
-	"github.com/mleku/lerproxy/tcpkeepalive"
-	"github.com/mleku/lerproxy/util"
 	"golang.org/x/crypto/acme/autocert"
 	"golang.org/x/sync/errgroup"
-	"mleku.net/slog"
+	"lerproxy.mleku.dev/buf"
+	"lerproxy.mleku.dev/hsts"
+	"lerproxy.mleku.dev/reverse"
+	"lerproxy.mleku.dev/tcpkeepalive"
+	"lerproxy.mleku.dev/util"
 )
 
 type runArgs struct {
@@ -46,12 +45,7 @@ type runArgs struct {
 
 var args runArgs
 
-var (
-	log, chk = slog.New(os.Stderr)
-)
-
 func main() {
-	slog.SetLogLevel(slog.Trace)
 	arg.MustParse(&args)
 	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt)
 	defer cancel()

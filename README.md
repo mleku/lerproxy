@@ -6,7 +6,7 @@ usage for multiple hostnames/backends including a static filesystem directory, n
 
 ## Install
 
-	go install github.com/mleku/lerproxy@latest
+	go install lerproxy.mleku.dev@latest
 
 ## Run
 

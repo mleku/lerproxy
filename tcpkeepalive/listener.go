@@ -4,7 +4,7 @@ import (
 	"net"
 	"time"
 
-	"github.com/mleku/lerproxy/timeout"
+	"lerproxy.mleku.dev/timeout"
 )
 
 // Period can be changed prior to opening a Listener to alter its'
