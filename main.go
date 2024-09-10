@@ -5,6 +5,7 @@ package main
 import (
 	"bufio"
 	"context"
+	"crypto/tls"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -18,6 +19,7 @@ import (
 	"path/filepath"
 	"runtime"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/alexflint/go-arg"
@@ -41,6 +43,7 @@ type runArgs struct {
 	RTO      time.Duration `arg:"-r,--rto" default:"1m" help:"maximum duration before timing out read of the request"`
 	WTO      time.Duration `arg:"-w,--wto" default:"5m" help:"maximum duration before timing out write of the response"`
 	Idle     time.Duration `arg:"-i,--idle" help:"how long idle connection is kept before closing (set rto, wto to 0 to use this)"`
+	Certs    []string      `arg:"--cert,separate" help:"certificates and the domain they match: eg: mleku.dev:/path/to/cert - this will indicate to load two, one with extension key and one with cert, each expected to be PEM encoded TLS private and public keys, respectively"`
 }
 
 var args runArgs
@@ -123,6 +126,53 @@ func run(ctx context.Context, args runArgs) (err error) {
 	return group.Wait()
 }
 
+// TLSConfig returns a TLSConfig that works with a LetsEncrypt automatic SSL cert issuer as well
+// as any provided .pem certificates from providers.
+//
+// The certs are provided in the form "example.com:/path/to/cert.pem"
+func TLSConfig(m *autocert.Manager, certs ...string) (tc *tls.Config) {
+	certMap := make(map[S]*tls.Certificate)
+	var mx sync.Mutex
+	for _, cert := range certs {
+		split := strings.Split(cert, ":")
+		if len(split) != 2 {
+			log.E.F("invalid certificate parameter format: `%s`", cert)
+			continue
+		}
+		var err E
+		var c tls.Certificate
+		if c, err = tls.LoadX509KeyPair(split[1]+".crt", split[1]+".key"); chk.E(err) {
+			continue
+		}
+		certMap[split[0]] = &c
+	}
+	tc = m.TLSConfig()
+	tc.GetCertificate = func(helo *tls.ClientHelloInfo) (cert *tls.Certificate, err E) {
+		mx.Lock()
+		var own S
+		for i := range certMap {
+			// to also handle explicit subdomain certs, prioritize over a root wildcard.
+			if helo.ServerName == i {
+				own = i
+				break
+			}
+			// if it got to us and ends in the same name dot tld assume the subdomain was
+			// redirected or it's a wildcard certificate, thus only the ending needs to match.
+			if strings.HasSuffix(helo.ServerName, i) {
+				own = i
+				break
+			}
+		}
+		if own != "" {
+			defer mx.Unlock()
+			return certMap[own], nil
+		}
+		mx.Unlock()
+		return m.GetCertificate(helo)
+	}
+	return
+}
+
 func setupServer(a runArgs) (s *http.Server, h http.Handler, err error) {
 	var mapping map[string]string
 	if mapping, err = readMapping(a.Conf); chk.E(err) {
@@ -150,7 +200,7 @@ func setupServer(a runArgs) (s *http.Server, h http.Handler, err error) {
 	s = &http.Server{
 		Handler:   proxy,
 		Addr:      a.Addr,
-		TLSConfig: m.TLSConfig(),
+		TLSConfig: TLSConfig(&m, a.Certs...),
 	}
 	h = m.HTTPHandler(nil)
 	return
@@ -187,7 +237,8 @@ func setProxy(mapping map[string]string) (h http.Handler, err error) {
 				`<html><head><meta name="go-import" content="%s git %s"/><meta http-equiv = "refresh" content = " 3 ; url = %s"/></head><body>redirecting to <a href="%s">%s</a></body></html>`,
 				hn, split[1], split[1], split[1], split[1])
 			mux.HandleFunc(hn+"/", func(writer http.ResponseWriter, request *http.Request) {
-				writer.Header().Set("Access-Control-Allow-Methods", "GET,HEAD,PUT,PATCH,POST,DELETE")
+				writer.Header().Set("Access-Control-Allow-Methods",
+					"GET,HEAD,PUT,PATCH,POST,DELETE")
 				writer.Header().Set("Access-Control-Allow-Origin", "*")
 				writer.Header().Set("Content-Type", "text/html")
 				writer.Header().Set("Content-Length", fmt.Sprint(len(redirector)))
@@ -219,15 +270,18 @@ func setProxy(mapping map[string]string) (h http.Handler, err error) {
 					continue
 				}
 				nostrJSON := string(jb)
-				mux.HandleFunc(hn+"/.well-known/nostr.json", func(writer http.ResponseWriter, request *http.Request) {
-					log.I.Ln("serving nostr json to", hn)
-					writer.Header().Set("Access-Control-Allow-Methods", "GET,HEAD,PUT,PATCH,POST,DELETE")
-					writer.Header().Set("Access-Control-Allow-Origin", "*")
-					writer.Header().Set("Content-Type", "application/json")
-					writer.Header().Set("Content-Length", fmt.Sprint(len(nostrJSON)))
-					writer.Header().Set("strict-transport-security", "max-age=0; includeSubDomains")
-					fmt.Fprint(writer, nostrJSON)
-				})
+				mux.HandleFunc(hn+"/.well-known/nostr.json",
+					func(writer http.ResponseWriter, request *http.Request) {
+						log.I.Ln("serving nostr json to", hn)
+						writer.Header().Set("Access-Control-Allow-Methods",
+							"GET,HEAD,PUT,PATCH,POST,DELETE")
+						writer.Header().Set("Access-Control-Allow-Origin", "*")
+						writer.Header().Set("Content-Type", "application/json")
+						writer.Header().Set("Content-Length", fmt.Sprint(len(nostrJSON)))
+						writer.Header().Set("strict-transport-security",
+							"max-age=0; includeSubDomains")
+						fmt.Fprint(writer, nostrJSON)
+					})
 				continue
 			}
 		} else if u, err := url.Parse(ba); err == nil {
@@ -235,7 +289,8 @@ func setProxy(mapping map[string]string) (h http.Handler, err error) {
 			case "http", "https":
 				rp := reverse.NewSingleHostReverseProxy(u)
 				modifyCORSResponse := func(res *http.Response) error {
-					res.Header.Set("Access-Control-Allow-Methods", "GET,HEAD,PUT,PATCH,POST,DELETE")
+					res.Header.Set("Access-Control-Allow-Methods",
+						"GET,HEAD,PUT,PATCH,POST,DELETE")
 					// res.Header.Set("Access-Control-Allow-Credentials", "true")
 					res.Header.Set("Access-Control-Allow-Origin", "*")
 					return nil
@@ -259,9 +314,7 @@ func setProxy(mapping map[string]string) (h http.Handler, err error) {
 				log.D.Ln(req.URL, req.RemoteAddr)
 			},
 			Transport: &http.Transport{
-				DialContext: func(ctx context.Context,
-					n, addr string) (net.Conn, error) {
-
+				DialContext: func(ctx context.Context, n, addr string) (net.Conn, error) {
 					return net.DialTimeout(network, ba, 5*time.Second)
 				},
 			},
