@@ -27,7 +27,7 @@ Options:
   --rto RTO, -r RTO      maximum duration before timing out read of the request [default: 1m]
   --wto WTO, -w WTO      maximum duration before timing out write of the response [default: 5m]
   --idle IDLE, -i IDLE   how long idle connection is kept before closing (set rto, wto to 0 to use this)
-  --cert CERT            certificates and the domain they match: eg: mleku.dev:/path/to/cert - this will indicate to load two, one with extension key and one with cert, each expected to be PEM encoded TLS private and public keys, respectively
+  --cert CERT            certificates and the domain they match: eg: mleku.dev:/path/to/cert - this will indicate to load two, one with extension .key and one with .crt, each expected to be PEM encoded TLS private and public keys, respectively
   --help, -h             display this help and exit
 ```
 

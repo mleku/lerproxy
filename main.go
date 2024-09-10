@@ -43,7 +43,7 @@ type runArgs struct {
 	RTO   time.Duration `arg:"-r,--rto" default:"1m" help:"maximum duration before timing out read of the request"`
 	WTO   time.Duration `arg:"-w,--wto" default:"5m" help:"maximum duration before timing out write of the response"`
 	Idle  time.Duration `arg:"-i,--idle" help:"how long idle connection is kept before closing (set rto, wto to 0 to use this)"`
-	Certs []string      `arg:"--cert,separate" help:"certificates and the domain they match: eg: mleku.dev:/path/to/cert - this will indicate to load two, one with extension key and one with cert, each expected to be PEM encoded TLS private and public keys, respectively"`
+	Certs []string      `arg:"--cert,separate" help:"certificates and the domain they match: eg: mleku.dev:/path/to/cert - this will indicate to load two, one with extension .key and one with .crt, each expected to be PEM encoded TLS private and public keys, respectively"`
 }
 
 var args runArgs
