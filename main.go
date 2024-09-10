@@ -33,17 +33,17 @@ import (
 )
 
 type runArgs struct {
-	Addr     string        `arg:"-l,--listen" default:":https" help:"address to listen at"`
-	Conf     string        `arg:"-m,--map" default:"mapping.txt" help:"file with host/backend mapping"`
-	Rewrites string        `arg:"-r,--rewrites" default:"rewrites.txt"`
-	Cache    string        `arg:"-c,--cachedir" default:"/var/cache/letsencrypt" help:"path to directory to cache key and certificates"`
-	HSTS     bool          `arg:"-h,--hsts" help:"add Strict-Transport-Security header"`
-	Email    string        `arg:"-e,--email" help:"contact email address presented to letsencrypt CA"`
-	HTTP     string        `arg:"--http" default:":http" help:"optional address to serve http-to-https redirects and ACME http-01 challenge responses"`
-	RTO      time.Duration `arg:"-r,--rto" default:"1m" help:"maximum duration before timing out read of the request"`
-	WTO      time.Duration `arg:"-w,--wto" default:"5m" help:"maximum duration before timing out write of the response"`
-	Idle     time.Duration `arg:"-i,--idle" help:"how long idle connection is kept before closing (set rto, wto to 0 to use this)"`
-	Certs    []string      `arg:"--cert,separate" help:"certificates and the domain they match: eg: mleku.dev:/path/to/cert - this will indicate to load two, one with extension key and one with cert, each expected to be PEM encoded TLS private and public keys, respectively"`
+	Addr string `arg:"-l,--listen" default:":https" help:"address to listen at"`
+	Conf string `arg:"-m,--map" default:"mapping.txt" help:"file with host/backend mapping"`
+	// Rewrites string        `arg:"-r,--rewrites" default:"rewrites.txt"`
+	Cache string        `arg:"-c,--cachedir" default:"/var/cache/letsencrypt" help:"path to directory to cache key and certificates"`
+	HSTS  bool          `arg:"-h,--hsts" help:"add Strict-Transport-Security header"`
+	Email string        `arg:"-e,--email" help:"contact email address presented to letsencrypt CA"`
+	HTTP  string        `arg:"--http" default:":http" help:"optional address to serve http-to-https redirects and ACME http-01 challenge responses"`
+	RTO   time.Duration `arg:"-r,--rto" default:"1m" help:"maximum duration before timing out read of the request"`
+	WTO   time.Duration `arg:"-w,--wto" default:"5m" help:"maximum duration before timing out write of the response"`
+	Idle  time.Duration `arg:"-i,--idle" help:"how long idle connection is kept before closing (set rto, wto to 0 to use this)"`
+	Certs []string      `arg:"--cert,separate" help:"certificates and the domain they match: eg: mleku.dev:/path/to/cert - this will indicate to load two, one with extension key and one with cert, each expected to be PEM encoded TLS private and public keys, respectively"`
 }
 
 var args runArgs
