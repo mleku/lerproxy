@@ -58,6 +58,17 @@ as:
   > Note that the match is greedy, so you can explicitly separately give a subdomain
   certificate and it will be selected even if there is a wildcard that also matches.
 
+# IMPORTANT
+
+With Comodo SSL (sectigo RSA) certificates you also need to append the intermediate certificate 
+to the `.crt` file in order to get it to work properly with openssl library based tools like 
+wget, curl and the go tool, which is quite important if you want to do subdomains on a wildcard
+certificate.
+
+Probably the same applies to some of the other certificate authorities. If you sometimes get 
+issues with CLI tools refusing to accept these certificates on your web server or other, this 
+may be the problem.
+
 ## example mapping.txt
 
     nostr.example.com: /path/to/nostr.json
